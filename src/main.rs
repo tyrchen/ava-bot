@@ -1,6 +1,9 @@
 use anyhow::Result;
-use ava_bot::handlers::{chats_handler, index_page};
-use axum::{routing::get, Router};
+use ava_bot::handlers::{assistant_handler, chats_handler, index_page};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use std::sync::Arc;
@@ -28,6 +31,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/", get(index_page))
         .route("/chats", get(chats_handler))
+        .route("/assistant", post(assistant_handler))
         .nest_service("/public", ServeDir::new("./public"))
         .with_state(state);
 

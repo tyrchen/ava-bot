@@ -5,5 +5,81 @@
     Contents of this box will be updated in real time with every SSE message
     received from the chatroom.
   </ul>
+
+  <div class="px-2 mt-4 flex items-center justify-center" x-data="recordingState()">
+    <button class="w-16 h-16 rounded-full text-white" @keyup.space.window="toggleRecording()"
+      :class="{'bg-red-800 animate-pulse': isRecording, 'bg-red-500': !isRecording}">
+      <i class="fa-solid fa-microphone fa-xl"></i>
+    </button>
+  </div>
 </div>
+
+
+{% endblock %}
+{% block script %}
+<script lang="javascript">
+
+  function recordingState() {
+    return {
+      isRecording: false,
+      toggleRecording: function () {
+        if (this.isRecording) {
+          recorder.stop();
+        } else {
+          recorder.start();
+        }
+        this.isRecording = !this.isRecording;
+      }
+
+    }
+  }
+
+  let recorder = {
+    mediaRecorder: null,
+    recordedChunks: [],
+    init: function () {
+
+      // Request access to the microphone
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          this.mediaRecorder = new MediaRecorder(stream);
+          console.log(this.mediaRecorder);
+
+          this.mediaRecorder.ondataavailable = function (e) {
+            console.log(e);
+
+            this.recordedChunks.push(e.data);
+          };
+
+          this.mediaRecorder.onstop = function () {
+            console.log('Stopped recording');
+            const blob = new Blob(this.recordedChunks, {
+              type: 'audio/mp3'
+            });
+
+            console.log(blob);
+
+            // Send the audio data to the server
+            fetch('/assistant', {
+              method: 'POST',
+              body: blob
+            });
+          };
+        });
+    },
+
+    start: function () {
+      this.recordedChunks = [];
+      this.mediaRecorder.start();
+    },
+
+    stop: function () {
+      this.mediaRecorder.stop();
+    },
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    recorder.init();
+  });
+</script>
 {% endblock %}

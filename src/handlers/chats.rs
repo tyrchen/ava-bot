@@ -13,7 +13,7 @@ pub async fn chats_handler() -> impl IntoResponse {
     // https://docs.rs/tokio-stream
     let stream = stream::repeat_with(|| Event::default().data("<li>hello world!</li>"))
         .map(Ok::<_, Infallible>)
-        .throttle(Duration::from_secs(1));
+        .throttle(Duration::from_secs(180));
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
