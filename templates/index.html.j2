@@ -45,13 +45,12 @@
           this.mediaRecorder = new MediaRecorder(stream);
           console.log(this.mediaRecorder);
 
-          this.mediaRecorder.ondataavailable = function (e) {
+          this.mediaRecorder.ondataavailable = (e) => {
             console.log(e);
-
             this.recordedChunks.push(e.data);
           };
 
-          this.mediaRecorder.onstop = function () {
+          this.mediaRecorder.onstop = () => {
             console.log('Stopped recording');
             const blob = new Blob(this.recordedChunks, {
               type: 'audio/mp3'
@@ -59,10 +58,18 @@
 
             console.log(blob);
 
+            const formData = new FormData();
+            formData.append('audio', blob);
+
             // Send the audio data to the server
             fetch('/assistant', {
               method: 'POST',
-              body: blob
+              body: formData
+            }).then(response => {
+              console.log(response);
+              return response.json();
+            }).then(data => {
+              console.log(data);
             });
           };
         });

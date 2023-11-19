@@ -1,5 +1,8 @@
 use anyhow::Result;
-use ava_bot::handlers::{assistant_handler, chats_handler, index_page};
+use ava_bot::{
+    handlers::{assistant_handler, chats_handler, index_page},
+    AppState, Args,
+};
 use axum::{
     routing::{get, post},
     Router,
@@ -9,18 +12,6 @@ use clap::Parser;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 use tracing::info;
-
-#[derive(Debug, Parser)]
-#[clap(name = "ava")]
-struct Args {
-    #[clap(short, long, default_value = "8080")]
-    port: u16,
-    #[clap(short, long, default_value = "./.certs")]
-    cert_path: String,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct AppState {}
 
 #[tokio::main]
 async fn main() -> Result<()> {
