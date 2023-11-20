@@ -24,6 +24,7 @@ async fn main() -> Result<()> {
         .route("/chats", get(chats_handler))
         .route("/assistant", post(assistant_handler))
         .nest_service("/public", ServeDir::new("./public"))
+        .nest_service("/assets", ServeDir::new("/tmp/ava-bot"))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", args.port);

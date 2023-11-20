@@ -1,12 +1,16 @@
-use std::env;
+mod error;
+mod extractors;
+pub mod handlers;
+
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 use clap::Parser;
 use dashmap::DashMap;
 use llm_sdk::LlmSdk;
 use tokio::sync::mpsc;
-
-mod error;
-pub mod handlers;
 
 #[derive(Debug, Parser)]
 #[clap(name = "ava")]
@@ -35,4 +39,14 @@ impl Default for AppState {
             senders: DashMap::new(),
         }
     }
+}
+
+pub fn audio_path(device_id: &str, name: &str) -> PathBuf {
+    Path::new("/tmp/ava-bot/audio")
+        .join(device_id)
+        .join(format!("{}.mp3", name))
+}
+
+pub fn audio_url(device_id: &str, name: &str) -> String {
+    format!("/assets/audio/{}/{}.mp3", device_id, name)
 }
