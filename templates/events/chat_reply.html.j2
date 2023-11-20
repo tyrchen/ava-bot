@@ -9,6 +9,10 @@
       {% match self %}
       {% when ChatReplyEvent::Speech with (v) %}
       {{ v|safe }}
+      {% when ChatReplyEvent::Markdown with (v) %}
+      {{ v|safe }}
+      {% when ChatReplyEvent::Image with (v) %}
+      {{ v|safe }}
       {% endmatch %}
     </div>
   </div>

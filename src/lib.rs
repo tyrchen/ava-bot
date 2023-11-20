@@ -1,6 +1,7 @@
 mod error;
 mod extractors;
 pub mod handlers;
+mod tools;
 
 use std::{
     env,
@@ -51,4 +52,14 @@ pub fn audio_path(device_id: &str, name: &str) -> PathBuf {
 
 pub fn audio_url(device_id: &str, name: &str) -> String {
     format!("/assets/audio/{}/{}.mp3", device_id, name)
+}
+
+pub fn image_path(device_id: &str, name: &str) -> PathBuf {
+    Path::new("/tmp/ava-bot/image")
+        .join(device_id)
+        .join(format!("{}.png", name))
+}
+
+pub fn image_url(device_id: &str, name: &str) -> String {
+    format!("/assets/image/{}/{}.png", device_id, name)
 }

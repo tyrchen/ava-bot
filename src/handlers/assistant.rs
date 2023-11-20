@@ -1,21 +1,31 @@
 use super::{AssistantEvent, AssistantStep, SpeechResult};
 use crate::{
-    audio_path, audio_url, error::AppError, extractors::AppContext, handlers::ChatInputEvent,
+    audio_path, audio_url,
+    error::AppError,
+    extractors::AppContext,
+    handlers::ChatInputEvent,
+    image_path, image_url,
+    tools::{
+        tool_completion_request, AnswerArgs, AssistantTool, DrawImageArgs, DrawImageResult,
+        WriteCodeArgs, WriteCodeResult,
+    },
     AppState,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use askama::Template;
 use axum::{
     extract::{Multipart, State},
     response::IntoResponse,
     Json,
 };
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use comrak::markdown_to_html;
 use llm_sdk::{
-    ChatCompletionMessage, ChatCompletionRequest, LlmSdk, SpeechRequest, WhisperRequestBuilder,
-    WhisperRequestType,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionRequest, CreateImageRequestBuilder,
+    ImageResponseFormat, LlmSdk, SpeechRequest, WhisperRequestBuilder, WhisperRequestType,
 };
 use serde_json::json;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use tokio::{fs, sync::broadcast};
 use tracing::info;
 use uuid::Uuid;
@@ -77,15 +87,58 @@ async fn process(
 
     signal_sender.send(in_chat_completion())?;
 
-    let output = chat_completion(llm, &input).await?;
+    let choice = chat_completion_with_tools(llm, &input).await?;
 
-    signal_sender.send(in_speech())?;
+    match choice.finish_reason {
+        llm_sdk::FinishReason::Stop => {
+            let output = choice
+                .message
+                .content
+                .ok_or_else(|| anyhow!("expect content but no content available"))?;
 
-    let speech_result = speech(llm, device_id, &output).await?;
+            signal_sender.send(in_speech())?;
+            let speech_result = speech(llm, device_id, &output).await?;
+            signal_sender.send(complete())?;
+            chat_sender.send(speech_result.into())?;
+        }
+        llm_sdk::FinishReason::ToolCalls => {
+            let tool_call = &choice.message.tool_calls[0].function;
+            match AssistantTool::from_str(&tool_call.name) {
+                Ok(v) if v == AssistantTool::DrawImage => {
+                    signal_sender.send(in_draw_image())?;
+                    let ret =
+                        draw_image(llm, device_id, serde_json::from_str(&tool_call.arguments)?)
+                            .await?;
+                    signal_sender.send(complete())?;
+                    chat_sender.send(ret.into())?;
+                }
+                Ok(v) if v == AssistantTool::WriteCode => {
+                    signal_sender.send(in_write_code())?;
+                    let ret = write_code(llm, serde_json::from_str(&tool_call.arguments)?).await?;
+                    signal_sender.send(complete())?;
+                    chat_sender.send(ret.into())?;
+                }
 
-    signal_sender.send(complete())?;
+                Ok(v) if v == AssistantTool::Answer => {
+                    signal_sender.send(in_chat_completion())?;
+                    let output = answer(llm, serde_json::from_str(&tool_call.arguments)?).await?;
+                    signal_sender.send(complete())?;
 
-    chat_sender.send(speech_result.into())?;
+                    signal_sender.send(in_speech())?;
+                    let speech_result = speech(llm, device_id, &output).await?;
+                    signal_sender.send(complete())?;
+                    chat_sender.send(speech_result.into())?;
+                }
+                _ => {
+                    bail!("no proper tool found at the moment")
+                }
+            }
+        }
+        _ => {
+            bail!("stop reason not supported")
+        }
+    }
+
     Ok(())
 }
 
@@ -100,14 +153,24 @@ async fn transcript(llm: &LlmSdk, data: Vec<u8>) -> anyhow::Result<String> {
     Ok(res.text)
 }
 
-async fn chat_completion(llm: &LlmSdk, prompt: &str) -> anyhow::Result<String> {
-    let req = ChatCompletionRequest::new(vec![
-        ChatCompletionMessage::new_system(
-            "I'm an assistant who can answer anything for you",
-            "Ava",
-        ),
-        ChatCompletionMessage::new_user(prompt, ""),
-    ]);
+async fn chat_completion_with_tools(
+    llm: &LlmSdk,
+    prompt: &str,
+) -> anyhow::Result<ChatCompletionChoice> {
+    let req = tool_completion_request(prompt, "");
+    let mut res = llm.chat_completion(req).await?;
+    let choice = res
+        .choices
+        .pop()
+        .ok_or_else(|| anyhow!("expect at least one choice"))?;
+    Ok(choice)
+}
+
+async fn chat_completion(
+    llm: &LlmSdk,
+    messages: Vec<ChatCompletionMessage>,
+) -> anyhow::Result<String> {
+    let req = ChatCompletionRequest::new(messages);
     let mut res = llm.chat_completion(req).await?;
     let content = res
         .choices
@@ -133,6 +196,55 @@ async fn speech(llm: &LlmSdk, device_id: &str, text: &str) -> anyhow::Result<Spe
     Ok(SpeechResult::new(text, audio_url(device_id, &uuid)))
 }
 
+async fn draw_image(
+    llm: &LlmSdk,
+    device_id: &str,
+    args: DrawImageArgs,
+) -> anyhow::Result<DrawImageResult> {
+    let req = CreateImageRequestBuilder::default()
+        .prompt(args.prompt)
+        .response_format(ImageResponseFormat::B64Json)
+        .build()
+        .unwrap();
+    let mut ret = llm.create_image(req).await?;
+    let img = ret
+        .data
+        .pop()
+        .ok_or_else(|| anyhow!("expect at least one data"))?;
+    let data = STANDARD.decode(img.b64_json.unwrap())?;
+    let uuid = Uuid::new_v4().to_string();
+    let path = image_path(device_id, &uuid);
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).await?;
+        }
+    }
+    fs::write(&path, data).await?;
+    Ok(DrawImageResult::new(
+        image_url(device_id, &uuid),
+        img.revised_prompt,
+    ))
+}
+
+async fn write_code(llm: &LlmSdk, args: WriteCodeArgs) -> anyhow::Result<WriteCodeResult> {
+    let messages = vec![
+      ChatCompletionMessage::new_system("I'm an expert on coding, I'll write code for you in markdown format based on your prompt", "Ava"),
+      ChatCompletionMessage::new_user(args.prompt, ""),
+
+    ];
+    let md = chat_completion(llm, messages).await?;
+    let content = markdown_to_html(&md, &comrak::ComrakOptions::default());
+    Ok(WriteCodeResult::new(content))
+}
+
+async fn answer(llm: &LlmSdk, args: AnswerArgs) -> anyhow::Result<String> {
+    let messages = vec![
+        ChatCompletionMessage::new_system("I can help answer anything you'd like to chat", "Ava"),
+        ChatCompletionMessage::new_user(args.prompt, ""),
+    ];
+    Ok(chat_completion(llm, messages).await?)
+}
+
 fn in_audio_upload() -> String {
     AssistantEvent::Processing(AssistantStep::UploadAudio).into()
 }
@@ -149,24 +261,12 @@ fn in_speech() -> String {
     AssistantEvent::Processing(AssistantStep::Speech).into()
 }
 
-#[allow(dead_code)]
-fn finish_upload_audio() -> String {
-    AssistantEvent::Finish(AssistantStep::UploadAudio).into()
+fn in_draw_image() -> String {
+    AssistantEvent::Processing(AssistantStep::DrawImage).into()
 }
 
-#[allow(dead_code)]
-fn finish_transcription() -> String {
-    AssistantEvent::Finish(AssistantStep::Transcription).into()
-}
-
-#[allow(dead_code)]
-fn finish_chat_completion() -> String {
-    AssistantEvent::Finish(AssistantStep::ChatCompletion).into()
-}
-
-#[allow(dead_code)]
-fn finish_speech() -> String {
-    AssistantEvent::Finish(AssistantStep::Speech).into()
+fn in_write_code() -> String {
+    AssistantEvent::Processing(AssistantStep::WriteCode).into()
 }
 
 fn complete() -> String {
