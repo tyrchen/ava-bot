@@ -1,4 +1,8 @@
-use crate::{audio_path, audio_url, error::AppError, extractors::AppContext, AppState};
+use super::{AssistantEvent, AssistantStep, SpeechResult};
+use crate::{
+    audio_path, audio_url, error::AppError, extractors::AppContext, handlers::ChatInputEvent,
+    AppState,
+};
 use anyhow::anyhow;
 use askama::Template;
 use axum::{
@@ -7,15 +11,14 @@ use axum::{
     Json,
 };
 use llm_sdk::{
-    ChatCompletionMessage, ChatCompletionRequest, LlmSdk, SpeechRequest, WhisperRequest,
+    ChatCompletionMessage, ChatCompletionRequest, LlmSdk, SpeechRequest, WhisperRequestBuilder,
+    WhisperRequestType,
 };
 use serde_json::json;
 use std::sync::Arc;
 use tokio::{fs, sync::broadcast};
 use tracing::info;
 use uuid::Uuid;
-
-use super::{AssistantEvent, AssistantStep};
 
 pub async fn assistant_handler(
     context: AppContext,
@@ -70,29 +73,29 @@ async fn process(
 
     let input = transcript(llm, data.to_vec()).await?;
 
+    chat_sender.send(ChatInputEvent::new(&input).into())?;
+
     signal_sender.send(in_chat_completion())?;
 
     let output = chat_completion(llm, &input).await?;
 
     signal_sender.send(in_speech())?;
 
-    let audio_url = speech(llm, device_id, &output).await?;
+    let speech_result = speech(llm, device_id, &output).await?;
 
     signal_sender.send(complete())?;
 
-    chat_sender.send(format!(
-        "<li>
-        <p>{}</p>
-        <audio controls autoplay><source src='{}' type='audio/mp3'></audio>
-
-        </li>",
-        output, audio_url
-    ))?;
+    chat_sender.send(speech_result.into())?;
     Ok(())
 }
 
 async fn transcript(llm: &LlmSdk, data: Vec<u8>) -> anyhow::Result<String> {
-    let req = WhisperRequest::transcription(data);
+    let req = WhisperRequestBuilder::default()
+        .file(data)
+        .prompt("If audio language is Chinese, please use Simplified Chinese")
+        .request_type(WhisperRequestType::Transcription)
+        .build()
+        .unwrap();
     let res = llm.whisper(req).await?;
     Ok(res.text)
 }
@@ -116,7 +119,7 @@ async fn chat_completion(llm: &LlmSdk, prompt: &str) -> anyhow::Result<String> {
     Ok(content)
 }
 
-async fn speech(llm: &LlmSdk, device_id: &str, text: &str) -> anyhow::Result<String> {
+async fn speech(llm: &LlmSdk, device_id: &str, text: &str) -> anyhow::Result<SpeechResult> {
     let req = SpeechRequest::new(text);
     let data = llm.speech(req).await?;
     let uuid = Uuid::new_v4().to_string();
@@ -127,7 +130,7 @@ async fn speech(llm: &LlmSdk, device_id: &str, text: &str) -> anyhow::Result<Str
         }
     }
     fs::write(&path, data).await?;
-    Ok(audio_url(device_id, &uuid))
+    Ok(SpeechResult::new(text, audio_url(device_id, &uuid)))
 }
 
 fn in_audio_upload() -> String {

@@ -1,17 +1,17 @@
 {% extends "base.html.j2" %} {% block content %}
-<div class="w-2/3 mx-auto items-center justify-center p-2 mt-2">
-  <h1 class="text-center text-2xl">Ava Bot</h1>
-  <ul hx-ext="sse" sse-connect="/chats" sse-swap="message" hx-swap="beforeend"
-    class="mt-4 p-2 rounded border flex items-center justify-center">
-  </ul>
+<div class="items-center justify-center w-2/3 p-2 mx-auto mt-2">
+  <h1 class="text-2xl text-center">Ava Bot</h1>
+  <ol hx-ext="sse" sse-connect="/chats" sse-swap="message" hx-swap="beforeend"
+    class="relative p-2 mt-4 border-gray-200 border-s dark:border-gray-700">
+  </ol>
 
-  <div class="px-2 mt-4 flex items-center justify-center" x-data="recordingState()">
-    <button class="w-16 h-16 rounded-full text-white" @keyup.space.window="toggleRecording()"
+  <div class="flex items-center justify-center px-2 mt-4" x-data="recordingState()">
+    <button class="w-16 h-16 text-white rounded-full" @keyup.space.window="toggleRecording()"
       :class="{'bg-red-800 animate-pulse': isRecording, 'bg-red-500': !isRecording}">
       <i class="fa-solid fa-microphone fa-xl"></i>
     </button>
   </div>
-  <div hx-ext="sse" sse-connect="/signals" sse-swap="message" class="p-2 flex items-center justify-center text-center">
+  <div hx-ext="sse" sse-connect="/signals" sse-swap="message" class="flex items-center justify-center p-2 text-center">
   </div>
 </div>
 
