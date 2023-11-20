@@ -10,7 +10,7 @@ use std::{
 use clap::Parser;
 use dashmap::DashMap;
 use llm_sdk::LlmSdk;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Parser)]
 #[clap(name = "ava")]
@@ -25,7 +25,8 @@ pub struct Args {
 pub struct AppState {
     pub(crate) llm: LlmSdk,
     // each device_id has a channel to send messages to
-    pub(crate) senders: DashMap<String, mpsc::Sender<serde_json::Value>>,
+    pub(crate) signals: DashMap<String, broadcast::Sender<String>>,
+    pub(crate) chats: DashMap<String, broadcast::Sender<String>>,
 }
 
 impl Default for AppState {
@@ -36,7 +37,8 @@ impl Default for AppState {
                 env::var("OPENAI_API_KEY").unwrap(),
                 3,
             ),
-            senders: DashMap::new(),
+            signals: DashMap::new(),
+            chats: DashMap::new(),
         }
     }
 }
