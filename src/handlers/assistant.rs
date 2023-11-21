@@ -19,7 +19,7 @@ use axum::{
     Json,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use comrak::markdown_to_html;
+use comrak::{markdown_to_html_with_plugins, plugins::syntect::SyntectAdapter};
 use llm_sdk::{
     ChatCompletionChoice, ChatCompletionMessage, ChatCompletionRequest, CreateImageRequestBuilder,
     ImageResponseFormat, LlmSdk, SpeechRequest, WhisperRequestBuilder, WhisperRequestType,
@@ -230,11 +230,10 @@ async fn write_code(llm: &LlmSdk, args: WriteCodeArgs) -> anyhow::Result<WriteCo
     let messages = vec![
       ChatCompletionMessage::new_system("I'm an expert on coding, I'll write code for you in markdown format based on your prompt", "Ava"),
       ChatCompletionMessage::new_user(args.prompt, ""),
-
     ];
     let md = chat_completion(llm, messages).await?;
-    let content = markdown_to_html(&md, &comrak::ComrakOptions::default());
-    Ok(WriteCodeResult::new(content))
+
+    Ok(WriteCodeResult::new(md2html(&md)))
 }
 
 async fn answer(llm: &LlmSdk, args: AnswerArgs) -> anyhow::Result<String> {
@@ -243,6 +242,15 @@ async fn answer(llm: &LlmSdk, args: AnswerArgs) -> anyhow::Result<String> {
         ChatCompletionMessage::new_user(args.prompt, ""),
     ];
     Ok(chat_completion(llm, messages).await?)
+}
+
+fn md2html(md: &str) -> String {
+    let adapter = SyntectAdapter::new("Solarized (dark)");
+    let options = comrak::Options::default();
+    let mut plugins = comrak::Plugins::default();
+
+    plugins.render.codefence_syntax_highlighter = Some(&adapter);
+    markdown_to_html_with_plugins(md, &options, &plugins)
 }
 
 fn in_audio_upload() -> String {
