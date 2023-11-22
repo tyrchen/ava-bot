@@ -98,23 +98,27 @@
 
     sse.addEventListener("input_skeleton", (event) => {
       chats.insertAdjacentHTML("beforeend", event.data);
+      signals.scrollIntoView();
     });
 
     sse.addEventListener("input", (event) => {
       let node = document.getElementById(`input-${event.lastEventId}`);
       if (node) {
         node.innerHTML = event.data;
+        signals.scrollIntoView();
       }
     });
 
     sse.addEventListener("reply_skeleton", (event) => {
       chats.insertAdjacentHTML("beforeend", event.data);
+      signals.scrollIntoView();
     });
 
     sse.addEventListener("reply", (event) => {
       let node = document.getElementById(`reply-${event.lastEventId}`);
       if (node) {
         node.innerHTML = event.data;
+        signals.scrollIntoView();
       }
     });
 

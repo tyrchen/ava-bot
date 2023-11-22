@@ -6,7 +6,18 @@ module.exports = {
     "./public/**/*.{html,js,css}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      width: {
+        128: "32rem",
+        192: "48rem",
+        256: "64rem",
+      },
+      height: {
+        128: "32rem",
+        192: "48rem",
+        256: "64rem",
+      },
+    },
   },
   plugins: [require("@tailwindcss/typography"), require("@tailwindcss/forms")],
 };
