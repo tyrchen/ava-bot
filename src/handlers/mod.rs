@@ -83,7 +83,7 @@ pub(crate) struct SpeechResult {
 pub(crate) enum AssistantStep {
     #[strum(serialize = "Uploading audio")]
     UploadAudio,
-    #[strum(serialize = "Transcripting audio")]
+    #[strum(serialize = "Transcribing audio")]
     Transcription,
     #[strum(serialize = "Thinking hard")]
     Thinking,

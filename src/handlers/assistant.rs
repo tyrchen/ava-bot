@@ -66,7 +66,7 @@ async fn process(
     };
 
     let data = match field.name() {
-        Some(name) if name == "audio" => field.bytes().await?,
+        Some("audio") => field.bytes().await?,
         _ => return Err(anyhow!("expected an audio field"))?,
     };
 
@@ -102,7 +102,7 @@ async fn process(
         llm_sdk::FinishReason::ToolCalls => {
             let tool_call = &choice.message.tool_calls[0].function;
             match AssistantTool::from_str(&tool_call.name) {
-                Ok(v) if v == AssistantTool::DrawImage => {
+                Ok(AssistantTool::DrawImage) => {
                     let args: DrawImageArgs = serde_json::from_str(&tool_call.arguments)?;
 
                     event_sender.send(in_draw_image())?;
@@ -113,14 +113,14 @@ async fn process(
                     event_sender.send(complete())?;
                     event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
                 }
-                Ok(v) if v == AssistantTool::WriteCode => {
+                Ok(AssistantTool::WriteCode) => {
                     event_sender.send(in_write_code())?;
                     let ret = write_code(llm, serde_json::from_str(&tool_call.arguments)?).await?;
                     event_sender.send(complete())?;
                     event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
                 }
 
-                Ok(v) if v == AssistantTool::Answer => {
+                Ok(AssistantTool::Answer) => {
                     event_sender.send(in_chat_completion())?;
                     let output = answer(llm, serde_json::from_str(&tool_call.arguments)?).await?;
 
@@ -245,7 +245,7 @@ async fn answer(llm: &LlmSdk, args: AnswerArgs) -> anyhow::Result<String> {
         ChatCompletionMessage::new_system("I can help answer anything you'd like to chat", "Ava"),
         ChatCompletionMessage::new_user(args.prompt, ""),
     ];
-    Ok(chat_completion(llm, messages).await?)
+    chat_completion(llm, messages).await
 }
 
 fn md2html(md: &str) -> String {
@@ -300,6 +300,11 @@ mod tests {
     #[test]
     fn test_error_render() {
         let event: String = error("error").into();
-        assert_eq!(event, r#"\n<p class=\"text-red-500\">Error: error</p>\n"#);
+        assert_eq!(
+            event,
+            r#"
+<p class="text-red-500"><i class="fa-solid fa-circle-exclamation"></i> Error: error</p>
+"#
+        );
     }
 }
