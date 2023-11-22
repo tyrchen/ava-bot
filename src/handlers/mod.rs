@@ -27,7 +27,6 @@ pub(crate) enum AssistantEvent {
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub(crate) enum SignalEvent {
     Processing(AssistantStep),
-    Finish(AssistantStep),
     Error(String),
     Complete,
 }
@@ -82,12 +81,19 @@ pub(crate) struct SpeechResult {
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum AssistantStep {
+    #[strum(serialize = "Uploading audio")]
     UploadAudio,
+    #[strum(serialize = "Transcripting audio")]
     Transcription,
+    #[strum(serialize = "Thinking hard")]
     Thinking,
+    #[strum(serialize = "Organizing answer")]
     ChatCompletion,
+    #[strum(serialize = "Drawing image")]
     DrawImage,
+    #[strum(serialize = "Writing code")]
     WriteCode,
+    #[strum(serialize = "Generating speech")]
     Speech,
 }
 
