@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ava_bot::{
-    handlers::{assistant_handler, chats_handler, index_page, signals_handler},
+    handlers::{assistant_handler, events_handler, index_page},
     AppState, Args,
 };
 use axum::{
@@ -21,8 +21,7 @@ async fn main() -> Result<()> {
     let state = Arc::new(AppState::default());
     let app = Router::new()
         .route("/", get(index_page))
-        .route("/chats", get(chats_handler))
-        .route("/signals", get(signals_handler))
+        .route("/events", get(events_handler))
         .route("/assistant", post(assistant_handler))
         .nest_service("/public", ServeDir::new("./public"))
         .nest_service("/assets", ServeDir::new("/tmp/ava-bot"))

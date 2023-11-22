@@ -23,6 +23,7 @@ chrono = { version = "0.4.31", features = ["serde"] }
 clap = { version = "4.4.8", features = ["derive"] }
 comrak = { version = "0.19.0", default-features = false, features = ["syntect"] }
 dashmap = "5.5.3"
+derive_more = "0.99.17"
 futures = "0.3.29"
 llm-sdk = "0.3.0"
 schemars = "0.8.16"

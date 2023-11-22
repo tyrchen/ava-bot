@@ -1,9 +1,9 @@
-use super::{AssistantEvent, AssistantStep, SpeechResult};
+use super::{AssistantEvent, AssistantStep, SignalEvent, SpeechResult};
 use crate::{
     audio_path, audio_url,
     error::AppError,
     extractors::AppContext,
-    handlers::ChatInputEvent,
+    handlers::{ChatInputEvent, ChatInputSkeletonEvent, ChatReplyEvent, ChatReplySkeletonEvent},
     image_path, image_url,
     tools::{
         tool_completion_request, AnswerArgs, AssistantTool, DrawImageArgs, DrawImageResult,
@@ -12,7 +12,6 @@ use crate::{
     AppState,
 };
 use anyhow::{anyhow, bail};
-use askama::Template;
 use axum::{
     extract::{Multipart, State},
     response::IntoResponse,
@@ -36,37 +35,31 @@ pub async fn assistant_handler(
     data: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
     let device_id = &context.device_id;
-    let signal_sender = state
-        .signals
+    let event_sender = state
+        .events
         .get(device_id)
         .ok_or_else(|| anyhow!("device_id not found for signal sender"))?
-        .clone();
-    info!("assistant handler");
-    let chat_sender = state
-        .chats
-        .get(device_id)
-        .ok_or_else(|| anyhow!("device_id not found for chat sender"))?
         .clone();
 
     info!("start assist for {}", device_id);
 
-    match process(&signal_sender, &chat_sender, &state.llm, device_id, data).await {
+    match process(&event_sender, &state.llm, device_id, data).await {
         Ok(_) => Ok(Json(json!({"status": "done"}))),
         Err(e) => {
-            signal_sender.send(error(e.to_string()))?;
+            event_sender.send(error(e.to_string()))?;
             Ok(Json(json!({"status": "error"})))
         }
     }
 }
 
 async fn process(
-    signal_sender: &broadcast::Sender<String>,
-    chat_sender: &broadcast::Sender<String>,
+    event_sender: &broadcast::Sender<AssistantEvent>,
     llm: &LlmSdk,
     device_id: &str,
     mut data: Multipart,
 ) -> anyhow::Result<()> {
-    signal_sender.send(in_audio_upload()).unwrap();
+    let id = Uuid::new_v4().to_string();
+    event_sender.send(in_audio_upload()).unwrap();
 
     let Some(field) = data.next_field().await? else {
         return Err(anyhow!("expected an audio field"))?;
@@ -79,13 +72,15 @@ async fn process(
 
     info!("audio data size: {}", data.len());
 
-    signal_sender.send(in_transcription())?;
+    event_sender.send(in_transcription())?;
+    event_sender.send(ChatInputSkeletonEvent::new(&id).into())?;
 
     let input = transcript(llm, data.to_vec()).await?;
 
-    chat_sender.send(ChatInputEvent::new(&input).into())?;
+    event_sender.send(ChatInputEvent::new(&id, &input).into())?;
 
-    signal_sender.send(in_chat_completion())?;
+    event_sender.send(in_thinking())?;
+    event_sender.send(ChatReplySkeletonEvent::new(&id).into())?;
 
     let choice = chat_completion_with_tools(llm, &input).await?;
 
@@ -96,38 +91,47 @@ async fn process(
                 .content
                 .ok_or_else(|| anyhow!("expect content but no content available"))?;
 
-            signal_sender.send(in_speech())?;
-            let speech_result = speech(llm, device_id, &output).await?;
-            signal_sender.send(complete())?;
-            chat_sender.send(speech_result.into())?;
+            event_sender.send(in_speech())?;
+            let ret = SpeechResult::new_text_only(&output);
+            event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
+
+            let ret = speech(llm, device_id, &output).await?;
+            event_sender.send(complete())?;
+            event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
         }
         llm_sdk::FinishReason::ToolCalls => {
             let tool_call = &choice.message.tool_calls[0].function;
             match AssistantTool::from_str(&tool_call.name) {
                 Ok(v) if v == AssistantTool::DrawImage => {
-                    signal_sender.send(in_draw_image())?;
-                    let ret =
-                        draw_image(llm, device_id, serde_json::from_str(&tool_call.arguments)?)
-                            .await?;
-                    signal_sender.send(complete())?;
-                    chat_sender.send(ret.into())?;
+                    let args: DrawImageArgs = serde_json::from_str(&tool_call.arguments)?;
+
+                    event_sender.send(in_draw_image())?;
+                    let ret = DrawImageResult::new("", &args.prompt);
+                    event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
+
+                    let ret = draw_image(llm, device_id, args).await?;
+                    event_sender.send(complete())?;
+                    event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
                 }
                 Ok(v) if v == AssistantTool::WriteCode => {
-                    signal_sender.send(in_write_code())?;
+                    event_sender.send(in_write_code())?;
                     let ret = write_code(llm, serde_json::from_str(&tool_call.arguments)?).await?;
-                    signal_sender.send(complete())?;
-                    chat_sender.send(ret.into())?;
+                    event_sender.send(complete())?;
+                    event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
                 }
 
                 Ok(v) if v == AssistantTool::Answer => {
-                    signal_sender.send(in_chat_completion())?;
+                    event_sender.send(in_chat_completion())?;
                     let output = answer(llm, serde_json::from_str(&tool_call.arguments)?).await?;
-                    signal_sender.send(complete())?;
 
-                    signal_sender.send(in_speech())?;
-                    let speech_result = speech(llm, device_id, &output).await?;
-                    signal_sender.send(complete())?;
-                    chat_sender.send(speech_result.into())?;
+                    event_sender.send(complete())?;
+                    let ret = SpeechResult::new_text_only(&output);
+                    event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
+
+                    event_sender.send(in_speech())?;
+                    let ret = speech(llm, device_id, &output).await?;
+                    event_sender.send(complete())?;
+                    event_sender.send(ChatReplyEvent::new(&id, ret).into())?;
                 }
                 _ => {
                     bail!("no proper tool found at the moment")
@@ -253,36 +257,40 @@ fn md2html(md: &str) -> String {
     markdown_to_html_with_plugins(md, &options, &plugins)
 }
 
-fn in_audio_upload() -> String {
-    AssistantEvent::Processing(AssistantStep::UploadAudio).into()
+fn in_audio_upload() -> AssistantEvent {
+    SignalEvent::Processing(AssistantStep::UploadAudio).into()
 }
 
-fn in_transcription() -> String {
-    AssistantEvent::Processing(AssistantStep::Transcription).into()
+fn in_transcription() -> AssistantEvent {
+    SignalEvent::Processing(AssistantStep::Transcription).into()
 }
 
-fn in_chat_completion() -> String {
-    AssistantEvent::Processing(AssistantStep::ChatCompletion).into()
+fn in_thinking() -> AssistantEvent {
+    SignalEvent::Processing(AssistantStep::Thinking).into()
 }
 
-fn in_speech() -> String {
-    AssistantEvent::Processing(AssistantStep::Speech).into()
+fn in_chat_completion() -> AssistantEvent {
+    SignalEvent::Processing(AssistantStep::ChatCompletion).into()
 }
 
-fn in_draw_image() -> String {
-    AssistantEvent::Processing(AssistantStep::DrawImage).into()
+fn in_speech() -> AssistantEvent {
+    SignalEvent::Processing(AssistantStep::Speech).into()
 }
 
-fn in_write_code() -> String {
-    AssistantEvent::Processing(AssistantStep::WriteCode).into()
+fn in_draw_image() -> AssistantEvent {
+    SignalEvent::Processing(AssistantStep::DrawImage).into()
 }
 
-fn complete() -> String {
-    AssistantEvent::Complete.render().unwrap().into()
+fn in_write_code() -> AssistantEvent {
+    SignalEvent::Processing(AssistantStep::WriteCode).into()
 }
 
-fn error(msg: impl Into<String>) -> String {
-    AssistantEvent::Error(msg.into()).into()
+fn complete() -> AssistantEvent {
+    SignalEvent::Complete.into()
+}
+
+fn error(msg: impl Into<String>) -> AssistantEvent {
+    SignalEvent::Error(msg.into()).into()
 }
 
 #[cfg(test)]
@@ -291,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_error_render() {
-        let event = error("error");
+        let event: String = error("error").into();
         assert_eq!(event, r#"\n<p class=\"text-red-500\">Error: error</p>\n"#);
     }
 }

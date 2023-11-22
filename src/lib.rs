@@ -10,6 +10,7 @@ use std::{
 
 use clap::Parser;
 use dashmap::DashMap;
+use handlers::AssistantEvent;
 use llm_sdk::LlmSdk;
 use tokio::sync::broadcast;
 
@@ -26,8 +27,7 @@ pub struct Args {
 pub struct AppState {
     pub(crate) llm: LlmSdk,
     // each device_id has a channel to send messages to
-    pub(crate) signals: DashMap<String, broadcast::Sender<String>>,
-    pub(crate) chats: DashMap<String, broadcast::Sender<String>>,
+    pub(crate) events: DashMap<String, broadcast::Sender<AssistantEvent>>,
 }
 
 impl Default for AppState {
@@ -38,8 +38,7 @@ impl Default for AppState {
                 env::var("OPENAI_API_KEY").unwrap(),
                 3,
             ),
-            signals: DashMap::new(),
-            chats: DashMap::new(),
+            events: DashMap::new(),
         }
     }
 }

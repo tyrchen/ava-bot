@@ -1,19 +1,8 @@
-<li class="mb-10 ms-6">
-  <span
-    class="absolute flex items-center justify-center w-6 h-6 bg-blue-100 rounded-full -start-3 ring-8 ring-white dark:ring-gray-900 dark:bg-blue-900">
-    <img class="rounded-full shadow-lg" src="/public/images/ava-small.png" alt="Ava" />
-  </span>
-  <div
-    class="items-center justify-between p-4 bg-white border border-gray-200 rounded-lg shadow-sm sm:flex dark:bg-gray-700 dark:border-gray-600">
-    <div class="text-sm font-normal text-gray-500 dark:text-gray-300">
-      {% match self %}
-      {% when ChatReplyEvent::Speech with (v) %}
-      {{ v|safe }}
-      {% when ChatReplyEvent::Markdown with (v) %}
-      {{ v|safe }}
-      {% when ChatReplyEvent::Image with (v) %}
-      {{ v|safe }}
-      {% endmatch %}
-    </div>
-  </div>
-</li>
+{% match data %}
+{% when ChatReplyData::Speech with (v) %}
+{{ v|safe }}
+{% when ChatReplyData::Markdown with (v) %}
+{{ v|safe }}
+{% when ChatReplyData::Image with (v) %}
+{{ v|safe }}
+{% endmatch %}

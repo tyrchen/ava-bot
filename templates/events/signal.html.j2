@@ -1,11 +1,11 @@
 {% match self %}
-{% when AssistantEvent::Processing with (v) %}
+{% when SignalEvent::Processing with (v) %}
 <p class="text-gray-800"><i class="fa-solid fa-spinner animate-spin"></i> Processing {{ v }}</p>
-{% when AssistantEvent::Finish with (v) %}
+{% when SignalEvent::Finish with (v) %}
 <p class="text-green-800">Finished {{ v }}</p>
-{% when AssistantEvent::Error with (v) %}
+{% when SignalEvent::Error with (v) %}
 <p class="text-red-500"><i class="fa-solid fa-circle-exclamation"></i>Error: {{ v }}</p>
-{% when AssistantEvent::Complete %}
+{% when SignalEvent::Complete %}
 <p class="text-green-800"><i class="fa-solid fa-check"></i>Complete</p>
 {% else %}
 <p class="text-yellow-700">Unknown event</p>
