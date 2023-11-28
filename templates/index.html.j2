@@ -26,6 +26,10 @@
         if (this.isRecording) {
           recorder.stop();
         } else {
+          let signals = document.getElementById("signals");
+          if (signals) {
+            signals.innerHTML = "Recording...";
+          }
           recorder.start();
         }
         this.isRecording = !this.isRecording;
@@ -70,6 +74,16 @@
               return response.json();
             }).then(data => {
               console.log(data);
+              if (data.status == 'done') {
+                let signals = document.getElementById("signals");
+                if (signals) {
+                  signals.classList.add("text-green-500");
+                  setTimeout(() => {
+                    signals.classList.remove("text-green-500");
+                    signals.innerHTML = "";
+                  }, 1000);
+                }
+              }
             });
           };
         });
@@ -97,11 +111,13 @@
     });
 
     sse.addEventListener("input_skeleton", (event) => {
+      console.log("input_skeleton", event);
       chats.insertAdjacentHTML("beforeend", event.data);
       signals.scrollIntoView();
     });
 
     sse.addEventListener("input", (event) => {
+      console.log("input", event);
       let node = document.getElementById(`input-${event.lastEventId}`);
       if (node) {
         node.innerHTML = event.data;
@@ -110,11 +126,13 @@
     });
 
     sse.addEventListener("reply_skeleton", (event) => {
+      console.log("reply_skeleton", event);
       chats.insertAdjacentHTML("beforeend", event.data);
       signals.scrollIntoView();
     });
 
     sse.addEventListener("reply", (event) => {
+      console.log("reply", event);
       let node = document.getElementById(`reply-${event.lastEventId}`);
       if (node) {
         node.innerHTML = event.data;

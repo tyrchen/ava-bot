@@ -9,3 +9,6 @@ yarn-error.log
 
 # macOS
 .DS_Store
+
+# python
+.venv
